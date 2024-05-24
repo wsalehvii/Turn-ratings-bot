@@ -35,10 +35,11 @@ class SQL:
                 id INTEGER PRIMARY KEY,
                 username TEXT NOT NULL,
                 password TEXT NOT NULL,
-                server INTEGER NOT NULL
+                server INTEGER NOT NULL,
+                lottery_status INTEGER DEFAULT 0  
             )
             """
-        )
+        )#اد کردن وضعیت قرعه کشی
         self.conn.commit()
         c.close()
 
@@ -46,7 +47,7 @@ class SQL:
         try:
             c = self.conn.cursor()
             c.execute(
-                "INSERT INTO users (id, username, password, server) VALUES (?, ?, ?, ?)",
+                "INSERT INTO users (id, username, password, server, lottery_status) VALUES (?, ?, ?, ?, 0)",
                 (user_id, username, password, server.value),
             )
             self.conn.commit()
