@@ -32,7 +32,7 @@ class Servers(enum.Enum):
 
 
 db_name = "db.sqlite"
-conn = sqlite3.connect(db_name, check_same_thread=False)
+conn = sqlite3.connect(db_name)
 
 
 class SQL:
@@ -86,8 +86,9 @@ class SQL:
         c = self.conn.cursor()
         c.execute("SELECT id from users where id = ?;", (user_id,))
         sqData = c.fetchone()
+        self.conn.commit()
         c.close()
-        return sqData is not None
+        return sqData != None
 
     def SqliteSelectOne(self, query: str, params: tuple = None):
         cursor = self.conn.cursor()
@@ -102,24 +103,32 @@ class SQL:
     def check_Lottery(self):
         try:
             c = self.conn.cursor()
-            c.execute("SELECT id FROM users WHERE lottery = 0")
-            list_id = c.fetchall()
-            if list_id:
-                random_user = random.choice(list_id)
-                c.execute("UPDATE users SET lottery = 1 WHERE id = ?", (random_user[0],))
-                self.conn.commit()
-                c.close()
-                return random_user[0]
+            c.execute("SELECT * FROM users")
+            my_list = c.fetchall()
+            if my_list:
+                my_list = [i[0] for i in my_list]
+                random_user = random.choice(my_list)
+                c.execute("SELECT * FROM users WHERE id=?", (random_user,))
+                user_data = c.fetchone()
+
+                if user_data[4] == 0:
+                    c.execute("UPDATE users SET lottery=1 WHERE id=?", (random_user,))
+                    my_list.remove(random_user)
+                    self.conn.commit()
+                    c.close()
+                    return random_user
+                else:
+                    # return user_data
+                    return "User has already won the lottery"
             else:
                 c.close()
-                return None
+                return "No users found in the database"
         except Exception as ex:
             logger.critical(ex)
-            return None
+            return "An error occurred"
 
 
 mySql = SQL(conn)
-mySql.create_tables()
 
 USERNAME, PASSWORD, SERVER = range(3)
 
@@ -135,26 +144,22 @@ def is_correct(password):
 
 async def random_lottery(update: Update, context: ContextTypes.DEFAULT_TYPE):
     id_telegram = update.message.from_user.username
-    name_user = mySql.check_Lottery()
-    await update.message.reply_text(f"قرعه به اسم {name_user} افتاد.")
-    # if id_telegram == "6100241206":
-    #     name_user = mySql.check_Lottery()
-    #     if name_user:
-    #         await update.message.reply_text(f"قرعه به اسم {name_user} افتاد.")
-    #     else:
-    #         await update.message.reply_text("هیچ کاربری برای قرعه‌کشی موجود نیست.")
-    # else:
-    #     await update.message.reply_text("شما اجازه قرعه‌کشی ندارید.")
-    
+    if id_telegram == "S_abyss7":
+        name_user = mySql.check_Lottery()
+        await update.message.reply_text(f"قرعه به اسم {name_user} افتادش ")
+    else:
+        await update.message.reply_text("شما اجازه ی قرعه کشی انداختن ندارید ")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     full_name = update.message.from_user.full_name
     id_telegram = update.message.from_user.username
-    context.user_data["telegram_id"] = update.message.from_user.id
+    context.user_data["telegram_id"] = (
+        update.message.from_user.id
+    )  # ذخیره آیدی تلگرام در user_data
     await update.message.reply_text(
-        f"سلام 😍 {full_name}! لطفاً یوزرنیم خود را وارد کنید:\n"
-        f"شما با آیدی - {id_telegram} - ربات ما را استارت کردید\n"
+        f"سلام  😍 {full_name}! لطفاً یوزرنیم خود را وارد کنید:\n"
+        f"شما با آیدی  - {id_telegram} -  ربات ما را استارت کردید\n"
         f"\n/cancel بزن اگه منصرف شدی 😑\n"
     )
     return USERNAME
@@ -205,15 +210,17 @@ async def server(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     context.user_data["server"] = server
 
+    # Save user data to database
     username = context.user_data["username"]
     password = context.user_data["password"]
-    telegram_id = context.user_data["telegram_id"]
+    telegram_id = context.user_data["telegram_id"]  # دریافت آیدی تلگرام از user_data
     if mySql.exists_user(telegram_id):
         mySql.update_user(username, password, server, telegram_id)
+
     else:
         mySql.add_user(username, password, server, telegram_id)
     await update.message.reply_text(
-        f"🙃 اطلاعات شما ذخیره شد:\n"
+        f" 🙃 اطلاعات شما ذخیره شد:\n"
         f"یوزرنیم: {username}\n"
         f"پسورد: {password}\n"
         f"سرور: {server.name}"
@@ -228,6 +235,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 def main() -> None:
     application = Application.builder().token(API_TOKEN).build()
+    mySql.create_tables()
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -243,8 +251,8 @@ def main() -> None:
         allow_reentry=True,
     )
     lottery_handler = CommandHandler("lottery", random_lottery)
-    application.add_handler(conv_handler)
     application.add_handler(lottery_handler)
+    application.add_handler(conv_handler)
     application.run_polling()
 
 
